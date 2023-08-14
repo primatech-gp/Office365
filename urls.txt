@@ -32,8 +32,8 @@ https://powerapps.microsoft.com - Microsoft PowerApps
 https://admin.microsoft.com/Adminportal/Home?source=applauncher#/setupwizard - Microsoft 365 Business Set up wizard
 https://<tenantname>-admin.sharepoint.com/_layouts/15/online/SiteCollections.aspx - Classic SharePoint Administration portal
 https://<tenantname>-admin.sharepoint.com/_layouts/15/online/AdminHome.aspx# - Modern SharePoint Administration portal
-https://config.office.com - App Admin Center
 https://<tenantname>.sharepoint.com/sites/sitecollection/_layouts/15/StorMan.aspx - SharePoint Site Storage metrics
+https://config.office.com - App Admin Center
 https://workplaceanalytics.office.com/ - Workplace Analytics
 https://portal.microsoft.com/adminportal/home#/networkperformance - Network performance
 https://admin.microsoft.com/AdminPortal/Home#/servicehealth - Service Health
@@ -59,6 +59,7 @@ https://cloudpc.microsoft.com - Windows 365
 https://compliance.microsoft.com/m365appprotection - App governance
 https://windows365.microsoft.com/ - Windows 365
 https://cloudpc.microsoft.com - Windows 365
+https://aka.ms/loopadmin - Enable Microsoft Loop in tenant
 
 ## Security 
 
@@ -113,6 +114,11 @@ https://status.azure.com - Azure Status
 https://www.qnamaker.ai/ - Q and A Maker
 https://portal.atp.azure.com/ - Microsoft Defender for Identity
 https://portal.azurerms.com/#/admin - Azure Information Protection portal
+https://oai.azure.com/ - Azure OpenAI Studio
+https://apps.azureiotcentral.com/home - IoT Central
+https://oai.azure.com/portal = AI Studio
+https://entra.microsoft.com - Entra admin center
+
 
 ## Microsoft Management Agent
 
@@ -130,6 +136,8 @@ https://www.whatismytenantid.com/ - What is my Microsoft Azure and Office 365 te
 https://o365.rocks/ - Tenant Availability Check
 https://adoption.microsoft.com/extensibility-look-book - Microsoft 365 Extensibility look book gallery
 https://lookbook.microsoft.com/ - SharePoint look book
+https://feedbackportal.microsoft.com/feedback - Product feedback portal
+https://download.microsoft.com/download/e/3/e/e3e9faf2-f28b-490a-9ada-c6089a1fc5b0/Product%20names%20and%20service%20plan%20identifiers%20for%20licensing.csv - SKUs
 
 ## Twitter
 

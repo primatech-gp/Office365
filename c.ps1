@@ -106,8 +106,13 @@ $scripts += [PSCustomObject]@{
 }
 $scripts += [PSCustomObject]@{
     Name = "msgraph-connect.ps1";
-    Service = "Graph";  
-    Module = "Microsoft.Graph"  
+    Service = "Graph (old)";  
+    Module = "MSGraph"  
+}
+$scripts += [PSCustomObject]@{
+    Name = "mggraph-connect.ps1";
+    Service = "Graph (new)";  
+    Module = "MGGraph"  
 }
 $scripts += [PSCustomObject]@{
     Name = "o365-connect-mfa-ctldply.ps1";
