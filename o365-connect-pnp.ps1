@@ -39,6 +39,16 @@ write-host -ForegroundColor $processmessagecolor "Prompt =", ($prompt)
 write-host -ForegroundColor $processmessagecolor "Debug =", ($debug)
 write-host -ForegroundColor $processmessagecolor "Update =", (-not $noupdate)
 
+$ps = $PSVersionTable.PSVersion
+if ($ps.Major -lt 7) {
+    write-host -foregroundcolor $errormessagecolor "`nThis script requires PowerShell version 7 or above`n"
+    if ($debug) {
+        Stop-Transcript | Out-Null                 ## Terminate transcription
+    }
+    exit 1
+}
+Write-host -foregroundcolor $processmessagecolor "`nDetected supported PowerShell version: $($ps.Major).$($ps.Minor)"
+
 # Microsoft Online Module
 if (get-module -listavailable -name Microsoft.Graph.Identity.DirectoryManagement) {
     ## Has the Microsoft Graph module been installed?
@@ -213,7 +223,7 @@ write-host -foregroundcolor $processmessagecolor "Microsoft Graph SharePoint Onl
 ## Connect to Office 365 admin service
 write-host -foregroundcolor $processmessagecolor "Connecting to Microsoft Graph"
 try {
-    Connect-MgGraph -Scopes "Sites.Read.All", "sites.ReadWrite.All"
+    Connect-MgGraph -nowelcome -Scopes "Sites.Read.All", "sites.ReadWrite.All,Domain.Read.All"
 }
 catch {
     Write-Host -ForegroundColor $errormessagecolor "[003] - Unable to connect to Microsoft Graph`n"
@@ -227,7 +237,7 @@ write-host -foregroundcolor $processmessagecolor "Connected to Microsoft Graph"
 
 ## Auto detect SharePoint Online admin domain
 write-host -foregroundcolor $processmessagecolor "Determining SharePoint URL"
-$domains = get-mgdomain -all                        ## get a list of all domains in tenant
+$domains = get-mgdomain                        ## get a list of all domains in tenant
 foreach ($domain in $domains) {
     ## loop through all these domains
     if ($domain.id.contains('onmicrosoft')) {

@@ -52,8 +52,10 @@ catch {
 write-host -ForegroundColor $processmessagecolor "Select List"
 $result = $lists | select-object Title, Id | Sort-Object Title | Out-GridView -OutputMode Single -title "Select List"
 
-write-host -ForegroundColor $processmessagecolor "Read items"
-$items=(Get-PnPListItem -List $result.id -Fields "Title","GUID").FieldValues
+write-host -ForegroundColor $processmessagecolor "[Launch] = Read items (this may take some time depending on the number of items in the list)"
+$items=(Get-PnPListItem -List $result.id -pagesize 5000 -Fields "Title","GUID").FieldValues
+write-host -ForegroundColor $processmessagecolor "[Finish] = Read items"
+Write-Host -ForegroundColor $processmessagecolor "Total Number of List Items: $($items.Count)`n"
 
 write-host -ForegroundColor $processmessagecolor "Reset all permissions on all items to inherit`n"
 if ($prompt) {
@@ -65,10 +67,19 @@ if ($prompt) {
         exit 2
     }
 }
-
+$count=0
+$totalitems = $items.Count
 foreach ($item in $items) {
-    write-host "Id =",$item.ID,"FileRef =",$item.FileRef
-    Set-PnPListItemPermission -List $result.id -Identity $item.ID -InheritPermissions
+    ++$count
+    write-host -nonewline "[$count of $totalitems] Id =",$item.ID,"FileRef =",$item.FileRef
+    try {
+        Set-PnPListItemPermission -List $result.id -Identity $item.ID -InheritPermissions
+        write-host -foregroundcolor $processmessagecolor " - Success"
+    }
+    catch {
+        write-host -foregroundcolor $errormessagecolor " - Failed"
+        write-host -foregroundcolor $errormessagecolor "`n", $_.Exception.Message
+    }
 }
 
 write-host -foregroundcolor $systemmessagecolor "`nReset Document Library permissions - complete`n"
