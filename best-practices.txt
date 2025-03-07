@@ -18,7 +18,7 @@ Microsoft Security Baselines - https://techcommunity.microsoft.com/t5/microsoft-
 Azure Security best practices - https://docs.microsoft.com/en-us/azure/cloud-adoption-framework/security/security-top-10
 Azure Identity Management and access control security best practices - https://docs.microsoft.com/en-us/azure/security/fundamentals/identity-management-best-practices
 Essential eight - https://www.cyber.gov.au/acsc/view-all-content/essential-eight
-CISA - Microsoft 365 Recommendations - https://www.us-cert.gov/ncas/alerts/aa20-120a
+CISA - Microsoft 365 Recommendations - https://www.us-cert.gov/.\o365-cncas/alerts/aa20-120a
 Center for Internet Security (CIS) benchmarks - https://docs.microsoft.com/en-us/microsoft-365/compliance/offering-cis-benchmark?view=o365-worldwide
 Cybersecurity best practices - https://www.cisecurity.org/cybersecurity-best-practices/
 Configure your Microsoft 365 tenant for increased security - https://docs.microsoft.com/en-us/microsoft-365/security/office-365-security/tenant-wide-setup-for-increased-security?view=o365-worldwide
