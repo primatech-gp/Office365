@@ -36,7 +36,7 @@ param(
     [Parameter(HelpMessage = "Path for log file (default: current directory)")]
     [ValidateScript({
         if (-not (Test-Path $_ -PathType Container)) {
-            throw "LogPath must be a valid directory path"
+            throw "LogPath '$_' does not exist or is not a directory"
         }
         return $true
     })]
@@ -143,12 +143,41 @@ param(
     Also offers comprehensive cleanup at the end of processing.
 
 .NOTES
-    Author: CIAOPS    Version: 2.11
-    Last Updated: November 2025
+    Author: CIAOPS    Version: 2.13
+    Last Updated: May 2026
     Requires: PowerShell 7.X or higher, Administrator privileges
     
     IMPORTANT: This version removes deprecated Azure AD and MSOnline modules in favor of Microsoft Graph PowerShell SDK
     
+    Major Changes in v2.13 (5 May 2026):
+    - Added PS7 bundled-module detection to Get-ModuleVersionInfo
+      Get-InstalledModule only sees modules registered by PowerShellGet; modules that
+      ship inside the PS7 installation directory (e.g. PowerShellGet, PackageManagement)
+      are never registered there and were incorrectly reported as 'not installed'.
+      A second check via Get-Module -ListAvailable now detects these bundled modules by
+      confirming their ModuleBase path falls under $PSHOME\Modules.
+    - Added IsBundled flag to the version-info hashtable returned by Get-ModuleVersionInfo
+      so that downstream logic can distinguish bundled modules from uninstalled ones.
+    - Added skip-install guard in Start-ModuleProcessing
+      When a module is flagged as bundled and the resolved action is 'Install', the
+      script now skips the install entirely and reports the bundled version as current.
+      This eliminates the misleading 'version currently in use' WARNING messages that
+      appeared when attempting to install PowerShellGet / PackageManagement while those
+      same modules were already loaded from $PSHOME\Modules by the PS7 runtime.
+    - Fixed LogPath parameter ignored by implementation
+      The -LogPath parameter (default: current directory) was documented and defaulted
+      correctly but the log file creation code hardcoded $env:TEMP, meaning the parameter
+      had no effect and logs always appeared in the system temp folder regardless of what
+      the user specified. The implementation now uses $LogPath so logs are written to the
+      documented location.
+    - Restored ValidateScript on LogPath parameter
+      The path validator was lost when the above fix was applied. It has been restored
+      and the error message improved to include the supplied path value so users
+      immediately see which path was rejected if an invalid directory is provided.
+
+    Major Changes in v2.12:
+    - Note: #Requires directive still shows system error in PS5 (unavoidable)
+
     Major Changes in v2.11:
     - Note: #Requires directive still shows system error in PS5 (unavoidable)
     
@@ -2136,6 +2165,7 @@ function Get-ModuleVersionInfo {
     $versionInfo = @{
         ModuleName = $ModuleName
         IsInstalled = $false
+        IsBundled = $false
         LocalVersion = $null
         OnlineVersion = $null
         UpdateAvailable = $false
@@ -2146,13 +2176,31 @@ function Get-ModuleVersionInfo {
     }
     
     try {
-        # Check for installed versions
+        # Check for versions installed via PowerShellGet / Install-Module
         $installedModules = Get-InstalledModule -Name $ModuleName -AllVersions -ErrorAction SilentlyContinue
         
         if ($installedModules) {
             $versionInfo.IsInstalled = $true
             $versionInfo.LocalVersion = ($installedModules | Sort-Object Version -Descending | Select-Object -First 1).Version
             $versionInfo.MultipleVersionsInstalled = ($installedModules | Measure-Object).Count -gt 1
+        }
+        
+        # If not found via Get-InstalledModule, check for modules bundled with PS7 ($PSHOME\Modules).
+        # Bundled modules ship inside the PS7 installation directory and are never registered with
+        # PowerShellGet, so Get-InstalledModule cannot see them -- but they are fully functional.
+        if (-not $versionInfo.IsInstalled) {
+            $psHomeModulePath = Join-Path $PSHOME 'Modules'
+            $bundledModule = Get-Module -Name $ModuleName -ListAvailable -ErrorAction SilentlyContinue |
+                             Where-Object { $_.ModuleBase -like "$psHomeModulePath*" } |
+                             Sort-Object Version -Descending |
+                             Select-Object -First 1
+            
+            if ($bundledModule) {
+                $versionInfo.IsInstalled = $true
+                $versionInfo.IsBundled   = $true
+                $versionInfo.LocalVersion = $bundledModule.Version
+                Write-Verbose "Module '$ModuleName' found as PS7 bundled module v$($bundledModule.Version) at $($bundledModule.ModuleBase)"
+            }
         }
         
         # Check online version
@@ -2511,69 +2559,75 @@ function Start-ModuleProcessing {
             Write-ColorOutput "  Current version: $($versionInfo.LocalVersion)" -Type Info
             if ($versionInfo.MultipleVersionsInstalled) {
                 Write-ColorOutput "  ⚠️ Multiple versions installed" -Type Warning
-                
-                # Offer cleanup option for multiple versions
-                if (-not $CheckOnly -and $SkipVersionCleanup -and $Prompt -and -not $Script:SkipCleanupPrompts) {
+
+                # Always inspect installed versions when duplicates are detected
+                $allVersions = Get-InstalledModule -Name $module.Name -AllVersions -ErrorAction SilentlyContinue |
+                              Sort-Object Version -Descending
+
+                if ($allVersions -and $allVersions.Count -gt 1) {
+                    Write-ColorOutput "  📋 Installed versions: $($allVersions.Version -join ', ')" -Type Info
+                }
+
+                # Default behavior: enforce latest-only maintenance immediately
+                if (-not $CheckOnly -and -not $SkipVersionCleanup) {
+                    Write-ColorOutput "  🧹 Enforcing latest-only cleanup for $($module.Name)..." -Type Process
+                    $cleanupResult = Remove-OldModuleVersions -ModuleName $module.Name -KeepLatestOnly
+
+                    if ($cleanupResult.Success -and $cleanupResult.RemovedCount -gt 0) {
+                        Write-ColorOutput "  ✅ Removed $($cleanupResult.RemovedCount) old version(s) - only the latest version remains" -Type Process
+                        Write-ColorOutput "  📋 Kept version: $($cleanupResult.KeptVersions -join ', ')" -Type Info
+                        $versionInfo.MultipleVersionsInstalled = $false
+                    } elseif ($cleanupResult.Success) {
+                        Write-ColorOutput "  ℹ️ No old versions were removed (module may currently be in use)" -Type Info
+                    } else {
+                        Write-ColorOutput "  ⚠️ Cleanup failed: $($cleanupResult.ErrorMessage)" -Type Warning
+                    }
+                }
+                elseif (-not $CheckOnly -and $SkipVersionCleanup -and $Prompt -and -not $Script:SkipCleanupPrompts) {
                     Write-ColorOutput "  💡 Multiple versions detected for $($module.Name)" -Type Info
-                    
-                    # Get all installed versions for display
-                    $allVersions = Get-InstalledModule -Name $module.Name -AllVersions -ErrorAction SilentlyContinue | 
-                                  Sort-Object Version -Descending
-                    
+
                     if ($allVersions -and $allVersions.Count -gt 1) {
-                        Write-ColorOutput "  📋 Installed versions:" -Type Info
-                        foreach ($version in $allVersions) {
-                            $indicator = if ($version.Version -eq $versionInfo.LocalVersion) { " (current)" } else { "" }
-                            Write-ColorOutput "    • $($version.Version)$indicator" -Type Info
-                        }
-                        
                         # Interactive prompt for cleanup
                         $cleanupChoice = $null
-                        if (-not $Prompt) {
-                            # Auto-cleanup mode - inform user but don't prompt
-                            Write-ColorOutput "  🔧 Automatic cleanup will remove old versions after any updates" -Type Info
-                        } else {
-                            # Interactive mode - ask user
-                            Write-ColorOutput "  🧹 Would you like to clean up old versions now?" -Type Warning
-                            Write-ColorOutput "     This will keep only the latest version ($($versionInfo.LocalVersion))" -Type Info
-                            
-                            do {
-                                $cleanupChoice = Read-Host "  Clean up old versions? (Y/N/S for Skip all prompts)"
-                                $cleanupChoice = $cleanupChoice.Trim().ToUpper()
-                                
-                                if ($cleanupChoice -eq 'S') {
-                                    # Skip all future prompts for this session
-                                    Write-ColorOutput "  ⏭️ Skipping cleanup prompts for remaining modules" -Type Warning
-                                    $Script:SkipCleanupPrompts = $true
-                                    break
-                                }
-                            } while ($cleanupChoice -notin @('Y', 'N', 'S'))
-                            
-                            # Perform cleanup if requested
-                            if ($cleanupChoice -eq 'Y') {
-                                Write-ColorOutput "  🧹 Cleaning up old versions of $($module.Name)..." -Type Process
-                                $cleanupResult = Remove-OldModuleVersions -ModuleName $module.Name -KeepLatestOnly
-                                
-                                if ($cleanupResult.Success -and $cleanupResult.RemovedCount -gt 0) {
-                                    Write-ColorOutput "  ✅ Removed $($cleanupResult.RemovedCount) old version(s)" -Type Process
-                                    Write-ColorOutput "  📋 Kept version: $($cleanupResult.KeptVersions -join ', ')" -Type Info
-                                } elseif ($cleanupResult.Success) {
-                                    Write-ColorOutput "  ℹ️ No old versions were removed (may be in use)" -Type Info
-                                } else {
-                                    Write-ColorOutput "  ⚠️ Cleanup failed: $($cleanupResult.ErrorMessage)" -Type Warning
-                                }
-                            } elseif ($cleanupChoice -eq 'N') {
-                                Write-ColorOutput "  ⏭️ Keeping all versions as requested" -Type Info
+                        Write-ColorOutput "  🧹 Would you like to clean up old versions now?" -Type Warning
+                        Write-ColorOutput "     This will keep only the latest version ($($versionInfo.LocalVersion))" -Type Info
+
+                        do {
+                            $cleanupChoice = Read-Host "  Clean up old versions? (Y/N/S for Skip all prompts)"
+                            $cleanupChoice = $cleanupChoice.Trim().ToUpper()
+
+                            if ($cleanupChoice -eq 'S') {
+                                # Skip all future prompts for this session
+                                Write-ColorOutput "  ⏭️ Skipping cleanup prompts for remaining modules" -Type Warning
+                                $Script:SkipCleanupPrompts = $true
+                                break
                             }
+                        } while ($cleanupChoice -notin @('Y', 'N', 'S'))
+
+                        # Perform cleanup if requested
+                        if ($cleanupChoice -eq 'Y') {
+                            Write-ColorOutput "  🧹 Cleaning up old versions of $($module.Name)..." -Type Process
+                            $cleanupResult = Remove-OldModuleVersions -ModuleName $module.Name -KeepLatestOnly
+
+                            if ($cleanupResult.Success -and $cleanupResult.RemovedCount -gt 0) {
+                                Write-ColorOutput "  ✅ Removed $($cleanupResult.RemovedCount) old version(s)" -Type Process
+                                Write-ColorOutput "  📋 Kept version: $($cleanupResult.KeptVersions -join ', ')" -Type Info
+                            } elseif ($cleanupResult.Success) {
+                                Write-ColorOutput "  ℹ️ No old versions were removed (may be in use)" -Type Info
+                            } else {
+                                Write-ColorOutput "  ⚠️ Cleanup failed: $($cleanupResult.ErrorMessage)" -Type Warning
+                            }
+                        } elseif ($cleanupChoice -eq 'N') {
+                            Write-ColorOutput "  ⏭️ Keeping all versions as requested" -Type Info
                         }
                     }
                 } elseif ($CheckOnly) {
                     # In check-only mode, just show the versions
-                    $allVersions = Get-InstalledModule -Name $module.Name -AllVersions -ErrorAction SilentlyContinue | 
-                                  Sort-Object Version -Descending
                     if ($allVersions -and $allVersions.Count -gt 1) {
                         Write-ColorOutput "  📋 Installed versions: $($allVersions.Version -join ', ')" -Type Info
                     }
+                } else {
+                    Write-ColorOutput "  ⏭️ Version cleanup skipped by parameter - multiple versions will be preserved" -Type Warning
                 }
             }
         } else {
@@ -2600,6 +2654,19 @@ function Start-ModuleProcessing {
             $action = 'Install'
         } elseif ($versionInfo.UpdateAvailable) {
             $action = 'Update'
+        }
+        
+        # Skip installation for modules that are already bundled with PS7.
+        # Bundled modules (e.g. PowerShellGet, PackageManagement) live inside $PSHOME\Modules
+        # and are loaded automatically. Installing the same version just produces confusing
+        # 'currently in use' warnings with no real benefit.
+        if ($action -eq 'Install' -and $versionInfo.IsBundled) {
+            $bundledVer = $versionInfo.LocalVersion
+            Write-ColorOutput "  + Bundled with PS7 (v$bundledVer in $PSHOME\Modules) - skipping install" -Type Process
+            Write-ColorOutput "    To get a standalone copy, run: Install-Module $($module.Name) -Force -AllowClobber -Scope AllUsers" -Type Info
+            $successCount++
+            Write-ColorOutput ""
+            continue
         }
         
         if ($action) {
@@ -2660,6 +2727,19 @@ function Start-ModuleProcessing {
         }
         
         Write-ColorOutput ""
+    }
+
+    # Final pass to ensure processed modules are maintained in a latest-only state
+    if (-not $CheckOnly -and -not $SkipVersionCleanup) {
+        Write-ColorOutput "" 
+        Write-ColorOutput "🧹 Final latest-only cleanup verification..." -Type System
+
+        foreach ($module in $Script:FilteredModuleList) {
+            $finalCleanupResult = Remove-OldModuleVersions -ModuleName $module.Name -KeepLatestOnly
+            if (-not $finalCleanupResult.Success) {
+                Write-ColorOutput "  ⚠️ Final cleanup could not fully complete for $($module.Name): $($finalCleanupResult.ErrorMessage)" -Type Warning
+            }
+        }
     }
     
     # Display summary
@@ -2839,7 +2919,7 @@ try {
 
     # Start transcript logging if requested
     if ($CreateLog) {
-        $logPath = Join-Path $env:TEMP "o365-update-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
+        $logPath = Join-Path $LogPath "o365-update-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
         Start-Transcript -Path $logPath -Append
         Write-ColorOutput "📋 Logging to: $logPath" -Type System
     }
